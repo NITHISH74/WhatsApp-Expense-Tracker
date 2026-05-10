@@ -5,7 +5,7 @@ Never hardcode credentials here.
 """
 
 from functools import lru_cache
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -23,17 +23,20 @@ class Settings(BaseSettings):
     db_file_path: str = "./expenses.db"
 
     # ── App ──────────────────────────────────────────────────────────────────
-    app_env: str = "development"  # "production" | "development"
+    app_env: str = "development"   # "production" | "development"
     log_level: str = "INFO"
 
     # ── Spending Alerts ───────────────────────────────────────────────────────
-    default_daily_alert_threshold: float = 100.0   # USD equivalent
+    default_daily_alert_threshold: float = 100.0
     default_weekly_alert_threshold: float = 500.0
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    # Pydantic v2 style config
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 
 @lru_cache()

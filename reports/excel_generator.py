@@ -18,7 +18,7 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart, PieChart, Reference
 from openpyxl.chart.label import DataLabelList
 from openpyxl.styles import (
-    Font, PatternFill, Alignment, Border, Side, numbers
+    Font, PatternFill, Alignment, Border, Side
 )
 from openpyxl.utils import get_column_letter
 
