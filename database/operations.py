@@ -7,11 +7,13 @@ All write operations encrypt sensitive fields before insertion.
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 
 from database.models import Base, User, Expense, ConversationState
 from config import settings
@@ -24,6 +26,32 @@ def _hash_phone(phone_number: str) -> str:
     return hashlib.sha256(phone_number.encode("utf-8")).hexdigest()
 
 
+def _ensure_db_directory(database_url: str) -> None:
+    """
+    Parse the SQLite file path from the connection URL and
+    create its parent directory if it does not yet exist.
+
+    SQLite URL formats handled:
+      sqlite+aiosqlite:///./expenses.db      → relative  ./expenses.db
+      sqlite+aiosqlite:////data/expenses.db  → absolute  /data/expenses.db
+    """
+    raw = re.sub(r"^sqlite\+aiosqlite://", "", database_url)
+    # 4-slash URL  → raw starts with //  → absolute path (e.g. /data/x.db)
+    # 3-slash URL  → raw starts with /   → relative path (e.g. ./x.db)
+    if raw.startswith("//"):
+        file_path = raw[1:]   # //data/x.db → /data/x.db
+    elif raw.startswith("/"):
+        file_path = raw[1:]   # /./x.db → ./x.db
+    else:
+        file_path = raw
+
+    parent = Path(file_path).parent
+    # Only create if it's not the current directory
+    if str(parent) not in (".", ""):
+        parent.mkdir(parents=True, exist_ok=True)
+        logger.info("Database directory ready: %s", parent)
+
+
 class DatabaseManager:
     """
     Central async database access object.
@@ -32,6 +60,9 @@ class DatabaseManager:
     """
 
     def __init__(self):
+        # Always create the DB directory before SQLite tries to open the file
+        _ensure_db_directory(settings.database_url)
+
         self._engine = create_async_engine(
             settings.database_url,
             echo=(settings.app_env == "development"),
@@ -48,24 +79,13 @@ class DatabaseManager:
         """Create all tables and enable WAL mode for concurrency."""
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            # WAL mode: concurrent reads + one write without locking
-            await conn.execute(
-                __import__("sqlalchemy").text("PRAGMA journal_mode=WAL;")
-            )
-            await conn.execute(
-                __import__("sqlalchemy").text("PRAGMA synchronous=NORMAL;")
-            )
+            await conn.execute(text("PRAGMA journal_mode=WAL;"))
+            await conn.execute(text("PRAGMA synchronous=NORMAL;"))
         logger.info("Database initialized (WAL mode enabled).")
 
     # ── User operations ──────────────────────────────────────────────────────
 
-    async def get_or_create_user(
-        self, phone_number: str, encryption
-    ) -> User:
-        """
-        Retrieve existing user or create a new one.
-        phone_number is hashed before storage; encrypted copy also stored.
-        """
+    async def get_or_create_user(self, phone_number: str, encryption) -> User:
         phone_hash = _hash_phone(phone_number)
         async with self._session_factory() as session:
             result = await session.execute(
@@ -95,22 +115,7 @@ class DatabaseManager:
         currency_code: str,
         encryption,
     ) -> Expense:
-        """
-        Encrypt sensitive fields and persist a new expense record.
-
-        Args:
-            phone_number: Raw phone number (will be hashed).
-            amount:       Exact amount (encrypted before storage).
-            category:     Expense category (encrypted).
-            description:  Free-text note (encrypted).
-            currency_code: ISO 4217 code (stored plaintext).
-            encryption:   EncryptionManager instance.
-
-        Returns:
-            The persisted Expense ORM object.
-        """
         phone_hash = _hash_phone(phone_number)
-        # Round amount to nearest 10 for non-sensitive threshold checking
         amount_approx = round(amount / 10) * 10
 
         expense = Expense(
@@ -124,9 +129,7 @@ class DatabaseManager:
         async with self._session_factory() as session:
             session.add(expense)
             await session.commit()
-            logger.info(
-                "Expense saved: id=%s user=%s...", expense.id, phone_hash[:8]
-            )
+            logger.info("Expense saved: id=%s user=%s...", expense.id, phone_hash[:8])
         return expense
 
     async def get_expenses(
@@ -136,11 +139,6 @@ class DatabaseManager:
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
     ) -> list[dict]:
-        """
-        Retrieve and decrypt all expenses for a user within a date range.
-
-        Returns a list of dicts with decrypted fields ready for report generation.
-        """
         phone_hash = _hash_phone(phone_number)
         async with self._session_factory() as session:
             query = select(Expense).where(Expense.user_phone_hash == phone_hash)
@@ -149,7 +147,6 @@ class DatabaseManager:
             if until:
                 query = query.where(Expense.created_at <= until)
             query = query.order_by(Expense.created_at.desc())
-
             result = await session.execute(query)
             rows = result.scalars().all()
 
@@ -171,14 +168,9 @@ class DatabaseManager:
     async def get_daily_total_approx(
         self, phone_number: str, date: Optional[datetime] = None
     ) -> float:
-        """
-        Fast total using amount_approx (no decryption) for alert threshold checks.
-        Returns sum of approximate amounts for the given calendar day.
-        """
         phone_hash = _hash_phone(phone_number)
         day = (date or datetime.utcnow()).replace(hour=0, minute=0, second=0, microsecond=0)
         next_day = day + timedelta(days=1)
-
         async with self._session_factory() as session:
             result = await session.execute(
                 select(func.sum(Expense.amount_approx)).where(
@@ -191,10 +183,8 @@ class DatabaseManager:
         return total or 0.0
 
     async def get_weekly_total_approx(self, phone_number: str) -> float:
-        """Fast weekly total using amount_approx (no decryption)."""
         phone_hash = _hash_phone(phone_number)
         week_ago = datetime.utcnow() - timedelta(days=7)
-
         async with self._session_factory() as session:
             result = await session.execute(
                 select(func.sum(Expense.amount_approx)).where(
@@ -210,10 +200,6 @@ class DatabaseManager:
     async def get_conversation_state(
         self, phone_number: str, encryption
     ) -> tuple[str, Optional[dict]]:
-        """
-        Returns (step, pending_data) for the user's current conversation.
-        pending_data is the decrypted JSON dict of the in-progress expense.
-        """
         phone_hash = _hash_phone(phone_number)
         async with self._session_factory() as session:
             result = await session.execute(
@@ -226,7 +212,6 @@ class DatabaseManager:
         if state is None:
             return "0", None
 
-        # Expire states older than 5 minutes
         age = datetime.utcnow() - (state.updated_at or datetime.utcnow())
         if age.total_seconds() > 300:
             await self.clear_conversation_state(phone_number)
@@ -248,7 +233,6 @@ class DatabaseManager:
         pending_data: Optional[dict],
         encryption,
     ) -> None:
-        """Upsert the conversation state for a user."""
         phone_hash = _hash_phone(phone_number)
         encrypted_data = None
         if pending_data:
@@ -270,7 +254,6 @@ class DatabaseManager:
             await session.commit()
 
     async def clear_conversation_state(self, phone_number: str) -> None:
-        """Reset conversation back to step 0 (no pending expense)."""
         phone_hash = _hash_phone(phone_number)
         async with self._session_factory() as session:
             result = await session.execute(
