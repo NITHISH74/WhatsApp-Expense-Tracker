@@ -28,28 +28,34 @@ def _hash_phone(phone_number: str) -> str:
 
 def _ensure_db_directory(database_url: str) -> None:
     """
-    Parse the SQLite file path from the connection URL and
-    create its parent directory if it does not yet exist.
+    Parse the SQLite file path from the connection URL and create its parent
+    directory if it does not yet exist. Silently skips on PermissionError
+    (e.g. Render Disk not yet attached).
 
-    SQLite URL formats handled:
-      sqlite+aiosqlite:///./expenses.db      → relative  ./expenses.db
-      sqlite+aiosqlite:////data/expenses.db  → absolute  /data/expenses.db
+    Handles:
+      sqlite+aiosqlite:///./expenses.db     -> relative ./expenses.db
+      sqlite+aiosqlite:////data/expenses.db -> absolute /data/expenses.db
     """
-    raw = re.sub(r"^sqlite\+aiosqlite://", "", database_url)
-    # 4-slash URL  → raw starts with //  → absolute path (e.g. /data/x.db)
-    # 3-slash URL  → raw starts with /   → relative path (e.g. ./x.db)
+    raw = re.sub(r"^sqlite[+]aiosqlite://", "", database_url)
     if raw.startswith("//"):
-        file_path = raw[1:]   # //data/x.db → /data/x.db
+        file_path = raw[1:]   # //data/x.db -> /data/x.db
     elif raw.startswith("/"):
-        file_path = raw[1:]   # /./x.db → ./x.db
+        file_path = raw[1:]   # /./x.db -> ./x.db
     else:
         file_path = raw
 
     parent = Path(file_path).parent
-    # Only create if it's not the current directory
     if str(parent) not in (".", ""):
-        parent.mkdir(parents=True, exist_ok=True)
-        logger.info("Database directory ready: %s", parent)
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+            logger.info("Database directory ready: %s", parent)
+        except PermissionError:
+            logger.warning(
+                "Cannot create %s — PermissionError. "
+                "Either add a Render Disk at that mount path, "
+                "or set DATABASE_URL=sqlite+aiosqlite:///./expenses.db in Render env vars.",
+                parent,
+            )
 
 
 class DatabaseManager:
