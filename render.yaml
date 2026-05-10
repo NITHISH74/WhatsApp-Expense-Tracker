@@ -1,0 +1,37 @@
+# render.yaml — Free-tier deployment configuration for Render.com
+# Deploy: connect GitHub repo → Render will auto-detect this file.
+
+services:
+  - type: web
+    name: expense-tracker
+    env: python
+    region: oregon                    # Free tier available regions: oregon, frankfurt
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+
+    envVars:
+      - key: TWILIO_ACCOUNT_SID
+        sync: false                   # Set manually in Render dashboard
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_NUMBER
+        value: whatsapp:+14155238886
+      - key: FERNET_KEY
+        sync: false                   # NEVER auto-generate — must be stable!
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./expenses.db
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+
+    # Persistent disk for SQLite (Render free tier supports 1GB)
+    disk:
+      name: sqlite-data
+      mountPath: /data
+      sizeGB: 1
+
+    # Override DB path to use persistent disk
+    # Add to your .env on Render: DATABASE_URL=sqlite+aiosqlite:////data/expenses.db

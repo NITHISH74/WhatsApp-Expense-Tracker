@@ -1,0 +1,26 @@
+# ── Core Framework ──────────────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9          # Required for Form() in FastAPI
+
+# ── Database ─────────────────────────────────────────────────────────────────
+sqlalchemy==2.0.30
+aiosqlite==0.20.0                # Async SQLite driver
+
+# ── Encryption ───────────────────────────────────────────────────────────────
+cryptography==42.0.8             # Includes Fernet (AES-128 CBC + HMAC)
+
+# ── Excel Reports ────────────────────────────────────────────────────────────
+openpyxl==3.1.3
+
+# ── Twilio ───────────────────────────────────────────────────────────────────
+twilio==9.1.0
+
+# ── Config ───────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+pydantic-settings==2.3.4
+
+# ── Testing ──────────────────────────────────────────────────────────────────
+pytest==8.2.2
+pytest-asyncio==0.23.7
+httpx==0.27.0                    # Async HTTP client for FastAPI TestClient
