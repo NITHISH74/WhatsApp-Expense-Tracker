@@ -45,3 +45,11 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+# ── Google Sheets (optional) ─────────────────────────────────────────────────
+# Paste the full JSON content of your service account key file here
+google_service_account_json: str = ""
+# The ID from your Google Sheet URL:
+# https://docs.google.com/spreadsheets/d/THIS_PART_HERE/edit
+google_sheet_id: str = ""
