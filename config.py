@@ -1,7 +1,5 @@
 """
 config.py — Application settings loaded from environment variables.
-All secrets must be set via .env or hosting platform env vars.
-Never hardcode credentials here.
 """
 
 from functools import lru_cache
@@ -12,10 +10,9 @@ class Settings(BaseSettings):
     # ── Twilio ───────────────────────────────────────────────────────────────
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
-    twilio_whatsapp_number: str = "whatsapp:+14155238886"  # Sandbox default
+    twilio_whatsapp_number: str = "whatsapp:+14155238886"
 
     # ── Encryption ───────────────────────────────────────────────────────────
-    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     fernet_key: str = ""
 
     # ── Database ─────────────────────────────────────────────────────────────
@@ -23,14 +20,17 @@ class Settings(BaseSettings):
     db_file_path: str = "./expenses.db"
 
     # ── App ──────────────────────────────────────────────────────────────────
-    app_env: str = "development"   # "production" | "development"
+    app_env: str = "development"
     log_level: str = "INFO"
 
     # ── Spending Alerts ───────────────────────────────────────────────────────
     default_daily_alert_threshold: float = 100.0
     default_weekly_alert_threshold: float = 500.0
 
-    # Pydantic v2 style config
+    # ── Google Sheets ─────────────────────────────────────────────────────────
+    google_service_account_json: str = ""
+    google_sheet_id: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -45,11 +45,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
-
-# ── Google Sheets (optional) ─────────────────────────────────────────────────
-# Paste the full JSON content of your service account key file here
-google_service_account_json: str = ""
-# The ID from your Google Sheet URL:
-# https://docs.google.com/spreadsheets/d/THIS_PART_HERE/edit
-google_sheet_id: str = ""

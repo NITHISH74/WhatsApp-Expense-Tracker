@@ -1,25 +1,33 @@
 """
 integrations/sheets_client.py
 Writes expenses to a Google Sheet in real-time.
-
-Setup (one-time):
-  1. Go to https://console.cloud.google.com
-  2. Create a project → Enable "Google Sheets API" + "Google Drive API"
-  3. Create a Service Account → download JSON key file
-  4. Copy the entire JSON content into GOOGLE_SERVICE_ACCOUNT_JSON env var
-  5. Create a Google Sheet → share it with the service account email
-  6. Copy the Sheet ID from the URL → set GOOGLE_SHEET_ID env var
-
-Sheet URL format:
-  https://docs.google.com/spreadsheets/d/SHEET_ID_HERE/edit
 """
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_sheet_id(sheet_id_or_url: str) -> str:
+    """
+    Accept either a raw Sheet ID or the full Google Sheets URL.
+    Extracts just the ID either way.
+
+    Full URL format:
+      https://docs.google.com/spreadsheets/d/SHEET_ID/edit#gid=0
+    """
+    if not sheet_id_or_url:
+        return ""
+    # If it looks like a URL, extract the ID part
+    match = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", sheet_id_or_url)
+    if match:
+        return match.group(1)
+    # Otherwise assume it's already a raw ID
+    return sheet_id_or_url.strip()
 
 
 class GoogleSheetsClient:
@@ -29,10 +37,11 @@ class GoogleSheetsClient:
     """
 
     def __init__(self, service_account_json: str, sheet_id: str):
-        self._sheet_id = sheet_id
+        # Auto-extract ID from URL if full URL was pasted
+        self._sheet_id = _extract_sheet_id(sheet_id)
         self._gc = None
 
-        if not service_account_json or not sheet_id:
+        if not service_account_json or not self._sheet_id:
             logger.warning("Google Sheets not configured — skipping sheet writes.")
             return
 
@@ -47,7 +56,7 @@ class GoogleSheetsClient:
             creds_dict = json.loads(service_account_json)
             creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             self._gc = gspread.authorize(creds)
-            logger.info("Google Sheets client initialized.")
+            logger.info("Google Sheets client initialized. Sheet ID: %s", self._sheet_id)
         except Exception as exc:
             logger.warning("Google Sheets init failed: %s", exc)
             self._gc = None
@@ -64,28 +73,22 @@ class GoogleSheetsClient:
         phone_number: str,
         created_at: Optional[datetime] = None,
     ) -> bool:
-        """
-        Append one expense row to the Google Sheet.
-        Creates the header row automatically on first use.
-        Returns True on success, False on failure.
-        """
+        """Append one expense row to the Google Sheet."""
         if not self._gc:
             return False
 
         try:
             sheet = self._gc.open_by_key(self._sheet_id).sheet1
 
-            # Auto-create header row if sheet is empty
-            if sheet.row_count == 0 or not sheet.row_values(1):
+            # Auto-create header if sheet is empty
+            existing = sheet.get_all_values()
+            if not existing:
                 sheet.append_row(
-                    ["Date", "Time", "Category", "Description", "Amount", "Currency", "Phone (last 4)"],
+                    ["Date", "Time", "Category", "Description", "Amount", "Currency"],
                     value_input_option="USER_ENTERED",
                 )
 
             now = created_at or datetime.utcnow()
-            # Only store last 4 digits of phone for privacy
-            phone_display = f"...{phone_number[-4:]}" if len(phone_number) >= 4 else "****"
-
             row = [
                 now.strftime("%Y-%m-%d"),
                 now.strftime("%H:%M"),
@@ -93,7 +96,6 @@ class GoogleSheetsClient:
                 description,
                 amount,
                 currency,
-                phone_display,
             ]
             sheet.append_row(row, value_input_option="USER_ENTERED")
             logger.info("Expense appended to Google Sheet.")
@@ -104,5 +106,4 @@ class GoogleSheetsClient:
             return False
 
     async def get_sheet_url(self) -> str:
-        """Return the public URL of the Google Sheet."""
         return f"https://docs.google.com/spreadsheets/d/{self._sheet_id}/edit"
