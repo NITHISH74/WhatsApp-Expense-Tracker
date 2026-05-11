@@ -60,11 +60,11 @@ Managing expenses shouldn't require jumping between apps. This project brings ex
          ┌───────────────┼───────────────┐
          │               │               │
          ▼               ▼               ▼
-    ┌─────────┐   ┌──────────┐   ┌──────────────┐
-    │ Validate│   │  Parse   │   │   Handle     │
+    ┌─────────┐   ┌──────────┐    ┌──────────────┐
+    │ Validate│   │  Parse   │    │   Handle     │
     │ & Rate  │──▶│ Expense  │──▶│  State       │
-    �� Limit   │   │ Pattern  │   │ (2-step)     │
-    └─────────┘   └──────────┘   └────┬─────────┘
+    │ Limit   │   │ Pattern  │    │ (2-step)     │
+    └─────────┘   └──────────┘    └────┬─────────┘
                                        │
                     ┌──────────────────┼──────────────────┐
                     │                  │                  │
@@ -481,11 +481,5 @@ Use agents for creative tasks (writing, brainstorming). Use automation for deter
 
 ---
 
-## 📞 Questions?
-
-- 📧 Email: [Open an issue](https://github.com/NITHISH74/WhatsApp-Expense-Tracker/issues)
-- 💬 Discussions: [Start a discussion](https://github.com/NITHISH74/WhatsApp-Expense-Tracker/discussions)
-
----
 
 **Made with ❤️ by [NITHISH74](https://github.com/NITHISH74)**
